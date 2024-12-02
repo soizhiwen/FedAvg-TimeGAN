@@ -5,7 +5,7 @@ import pandas as pd
 
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset
-from Models.imputers.utils import (
+from Models.timegan.utils import (
     normalize_to_neg_one_to_one,
     unnormalize_to_zero_to_one,
 )
