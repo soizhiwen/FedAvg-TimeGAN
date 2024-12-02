@@ -15,7 +15,9 @@ timegan.py
 
 Note: Use original data as training set to generater synthetic data (time-series)
 """
+
 import os
+import numpy as np
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -38,10 +40,9 @@ class BaseModel:
         self.device = args.device
         self.train_num_steps = config["solver"]["n_iters"]
         self.lr = config["solver"]["learning_rate"]
-        self.beta = config["solver"]["beta"]
         self.w_gamma = config["solver"]["w_gamma"]
         self.w_g = config["solver"]["w_g"]
-        self.dl = cycle(dataloader["dataloader"])
+        self.dl = cycle(dataloader["dataloader"]) if dataloader else None
         self.results_folder = Path(
             f"{args.save_dir}/{config['solver']['results_folder']}"
         )
@@ -64,7 +65,7 @@ class BaseModel:
         self.nete.train()
         self.netr.train()
 
-        self.X, self.T = next(self.dl).to(self.device)
+        self.X = next(self.dl).to(self.device)
 
         # train encoder & decoder
         self.optimize_params_er()
@@ -75,7 +76,7 @@ class BaseModel:
         self.nete.train()
         self.netr.train()
 
-        self.X, self.T = next(self.dl).to(self.device)
+        self.X = next(self.dl).to(self.device)
 
         # train encoder & decoder
         self.optimize_params_er_()
@@ -86,7 +87,7 @@ class BaseModel:
         # self.nete.eval()
         self.nets.train()
 
-        self.X, self.T = next(self.dl).to(self.device)
+        self.X = next(self.dl).to(self.device)
 
         # train superviser
         self.optimize_params_s()
@@ -99,7 +100,7 @@ class BaseModel:
     self.netd.eval()"""
         self.netg.train()
 
-        self.X, self.T = next(self.dl).to(self.device)
+        self.X = next(self.dl).to(self.device)
         self.Z = torch.rand_like(self.X)
 
         # train superviser
@@ -113,7 +114,7 @@ class BaseModel:
     self.netg.eval()"""
         self.netd.train()
 
-        self.X, self.T = next(self.dl).to(self.device)
+        self.X = next(self.dl).to(self.device)
         self.Z = torch.rand_like(self.X)
 
         # train superviser
@@ -147,46 +148,34 @@ class BaseModel:
 
             self.train_one_iter_d()
 
-        print("Superviser training done")
+        print("All training done")
 
-    def sample(self, num_samples, shape):
-        if num_samples == 0:
-            return None, None
-        ## Synthetic data generation
-        self.Z = torch.randn([num_samples, shape[0], shape[1]], device=self.device)
-        self.E_hat = self.netg(self.Z)  # [?, 24, 24]
-        self.H_hat = self.nets(self.E_hat)  # [?, 24, 24]
-        generated_data_curr = (
-            self.netr(self.H_hat).cpu().detach().numpy()
-        )  # [?, 24, 24]
+    def sample(self, num, size_every, shape):
+        samples = np.empty([0, shape[0], shape[1]])
+        num_cycle = int(num // size_every) + 1
 
-        generated_data = list()
-        for i in range(num_samples):
-            temp = generated_data_curr[i, : self.ori_time[i], :]
-            generated_data.append(temp)
+        for _ in range(num_cycle):
+            sample_size = (size_every, shape[0], shape[1])
+            self.Z = torch.randn(sample_size, device=self.device)
+            self.E_hat = self.netg(self.Z)  # [?, 24, 24]
+            self.H_hat = self.nets(self.E_hat)  # [?, 24, 24]
+            sample = self.netr(self.H_hat)
+            samples = np.row_stack([samples, sample.detach().cpu().numpy()])
+            torch.cuda.empty_cache()
 
-        # Renormalization
-        # generated_data = generated_data * self.max_val
-        # generated_data = generated_data + self.min_val
-        return generated_data
+        return samples
 
 
 class TimeGAN(BaseModel):
-    """TimeGAN Class"""
-
-    @property
-    def name(self):
-        return "TimeGAN"
-
-    def __init__(self, opt, ori_data):
-        super(TimeGAN, self).__init__(opt, ori_data)
+    def __init__(self, config, args, dataloader):
+        super(TimeGAN, self).__init__(config, args, dataloader)
 
         # Create and initialize networks.
-        self.nete = Encoder(self.config).to(self.device)
-        self.netr = Recovery(self.config).to(self.device)
-        self.netg = Generator(self.config).to(self.device)
-        self.netd = Discriminator(self.config).to(self.device)
-        self.nets = Supervisor(self.config).to(self.device)
+        self.nete = Encoder(self.config["model"]).to(self.device)
+        self.netr = Recovery(self.config["model"]).to(self.device)
+        self.netg = Generator(self.config["model"]).to(self.device)
+        self.netd = Discriminator(self.config["model"]).to(self.device)
+        self.nets = Supervisor(self.config["model"]).to(self.device)
 
         # loss
         self.l_mse = nn.MSELoss()
@@ -195,19 +184,19 @@ class TimeGAN(BaseModel):
 
         # Setup optimizer
         self.optimizer_e = optim.Adam(
-            self.nete.parameters(), lr=self.lr, betas=(self.beta, 0.999)
+            self.nete.parameters(), lr=self.lr, betas=(0.9, 0.999)
         )
         self.optimizer_r = optim.Adam(
-            self.netr.parameters(), lr=self.lr, betas=(self.beta, 0.999)
+            self.netr.parameters(), lr=self.lr, betas=(0.9, 0.999)
         )
         self.optimizer_g = optim.Adam(
-            self.netg.parameters(), lr=self.lr, betas=(self.beta, 0.999)
+            self.netg.parameters(), lr=self.lr, betas=(0.9, 0.999)
         )
         self.optimizer_d = optim.Adam(
-            self.netd.parameters(), lr=self.lr, betas=(self.beta, 0.999)
+            self.netd.parameters(), lr=self.lr, betas=(0.9, 0.999)
         )
         self.optimizer_s = optim.Adam(
-            self.nets.parameters(), lr=self.lr, betas=(self.beta, 0.999)
+            self.nets.parameters(), lr=self.lr, betas=(0.9, 0.999)
         )
 
     def forward_e(self):

@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore")
 import torch
 import flwr as fl
 
-from Models.imputers.SSSDS4Imputer import SSSDS4Imputer
+from Models.timegan.timegan import TimeGAN
 from Federated.server import get_fedavg_fn
 from Federated.client import get_client_fn
 from Federated.utils import plot_metrics, increment_path
@@ -103,10 +103,14 @@ def main():
         seed_everything(args.seed, args.cudnn_deterministic)
 
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SSSDS4Imputer(**config["model"]).to(args.device)
-    model_parameters = [val.cpu().numpy() for _, val in model.state_dict().items()]
+    trainer = TimeGAN(config, args, None)
+    model_params = [val.cpu().numpy() for _, val in trainer.nete.state_dict().items()]
+    model_params += [val.cpu().numpy() for _, val in trainer.netr.state_dict().items()]
+    model_params += [val.cpu().numpy() for _, val in trainer.netg.state_dict().items()]
+    model_params += [val.cpu().numpy() for _, val in trainer.netd.state_dict().items()]
+    model_params += [val.cpu().numpy() for _, val in trainer.nets.state_dict().items()]
 
-    strategy = get_fedavg_fn(args.num_clients, model_parameters)
+    strategy = get_fedavg_fn(args.num_clients, model_params)
     client_fn = get_client_fn(config, args)
 
     client_resources = {

@@ -12,9 +12,8 @@ import numpy.random as npr
 import flwr as fl
 from flwr.common import NDArrays, Scalar
 
-from engine.solver import Trainer
-from Models.imputers.SSSDS4Imputer import SSSDS4Imputer
-from Models.imputers.utils import unnormalize_to_zero_to_one
+from Models.timegan.timegan import TimeGAN
+from Models.timegan.utils import unnormalize_to_zero_to_one
 from Data.build_dataloader import build_dataloader_fed
 from Federated.utils import (
     load_data_partitions,
@@ -66,32 +65,86 @@ class FlowerClient(fl.client.NumPyClient):
             f"{self.dl_info['dataset'].name}_{self.dl_info['dataset'].window}"
         )
 
-        # Initialize model
-        model = SSSDS4Imputer(**config["model"]).to(args.device)
-
-        self.trainer = Trainer(
-            config=config,
-            args=args,
-            model=model,
-            dataloader=self.dl_info,
-        )
+        self.trainer = TimeGAN(config=config, args=args, dataloader=self.dl_info)
+        self.nete_params_len = len(self.trainer.nete.state_dict().values())
+        self.netr_params_len = len(self.trainer.netr.state_dict().values())
+        self.netg_params_len = len(self.trainer.netg.state_dict().values())
+        self.netd_params_len = len(self.trainer.netd.state_dict().values())
+        self.nets_params_len = len(self.trainer.nets.state_dict().values())
 
     def get_parameters(self):
-        parameters = []
+        nete_params, netr_params, netg_params = [], [], []
+        netd_params, nets_params = [], []
         param_bytes = 0
-        for _, val in self.trainer.model.state_dict().items():
-            parameters.append(val.cpu().numpy())
-            param_bytes += parameters[-1].nbytes
+
+        for _, val in self.trainer.nete.state_dict().items():
+            nete_params.append(val.cpu().numpy())
+            param_bytes += nete_params[-1].nbytes
+
+        for _, val in self.trainer.netr.state_dict().items():
+            netr_params.append(val.cpu().numpy())
+            param_bytes += netr_params[-1].nbytes
+
+        for _, val in self.trainer.netg.state_dict().items():
+            netg_params.append(val.cpu().numpy())
+            param_bytes += netg_params[-1].nbytes
+
+        for _, val in self.trainer.netd.state_dict().items():
+            netd_params.append(val.cpu().numpy())
+            param_bytes += netd_params[-1].nbytes
+
+        for _, val in self.trainer.nets.state_dict().items():
+            nets_params.append(val.cpu().numpy())
+            param_bytes += nets_params[-1].nbytes
+
+        parameters = nete_params + netr_params + netg_params + netd_params + nets_params
 
         return parameters, param_bytes
 
     def set_parameters(self, parameters: NDArrays) -> None:
-        params_dict = zip(self.trainer.model.state_dict().keys(), parameters)
+        params = parameters[: self.nete_params_len]
+        params_dict = zip(self.trainer.nete.state_dict().keys(), params)
         state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
-        self.trainer.model.load_state_dict(state_dict, strict=True)
+        self.trainer.nete.load_state_dict(state_dict, strict=True)
+        parameters = parameters[self.nete_params_len :]
+
+        params = parameters[: self.netr_params_len]
+        params_dict = zip(self.trainer.netr.state_dict().keys(), params)
+        state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
+        self.trainer.netr.load_state_dict(state_dict, strict=True)
+        parameters = parameters[self.netr_params_len :]
+
+        params = parameters[: self.netg_params_len]
+        params_dict = zip(self.trainer.netg.state_dict().keys(), params)
+        state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
+        self.trainer.netg.load_state_dict(state_dict, strict=True)
+        parameters = parameters[self.netg_params_len :]
+
+        params = parameters[: self.netd_params_len]
+        params_dict = zip(self.trainer.netd.state_dict().keys(), params)
+        state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
+        self.trainer.netd.load_state_dict(state_dict, strict=True)
+        parameters = parameters[self.netd_params_len :]
+
+        params = parameters[: self.nets_params_len]
+        params_dict = zip(self.trainer.nets.state_dict().keys(), params)
+        state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
+        self.trainer.nets.load_state_dict(state_dict, strict=True)
 
         param_bytes = 0
-        for _, val in self.trainer.model.state_dict().items():
+        for _, val in self.trainer.nete.state_dict().items():
+            param_bytes += val.cpu().numpy().nbytes
+
+        for _, val in self.trainer.netr.state_dict().items():
+            param_bytes += val.cpu().numpy().nbytes
+
+        for _, val in self.trainer.netg.state_dict().items():
+            param_bytes += val.cpu().numpy().nbytes
+
+        for _, val in self.trainer.netd.state_dict().items():
+            param_bytes += val.cpu().numpy().nbytes
+
+        for _, val in self.trainer.nets.state_dict().items():
             param_bytes += val.cpu().numpy().nbytes
 
         return param_bytes
@@ -109,7 +162,7 @@ class FlowerClient(fl.client.NumPyClient):
         server_round = config["server_round"]
         self.trainer.train_num_steps = config["local_epochs"]
         train_time = time.time()
-        train_loss = self.trainer.train()
+        self.trainer.train()
         train_time = time.time() - train_time
         self.write_client_results({"train_time": train_time}, server_round)
         self.trainer.save()
@@ -118,7 +171,7 @@ class FlowerClient(fl.client.NumPyClient):
         total_param_bytes += param_bytes
         self.write_client_results({"param_bytes": total_param_bytes}, server_round)
 
-        metrics = {"train_loss": float(train_loss)}
+        metrics = {"train_loss": 0.0}
         self.write_client_results(metrics, server_round)
 
         return parameters_prime, len(self.dl_info["dataset"]), metrics
