@@ -1,7 +1,7 @@
 model:
   z_dim: 28
   hidden_dim: 64
-  num_layer: 3
+  num_layer: 4
 
 solver:
   results_folder: ./Checkpoints_energy
