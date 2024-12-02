@@ -1,0 +1,41 @@
+diffusion_config:
+  T: 200
+  beta_0: 0.0001
+  beta_T: 0.02
+
+model:
+  in_channels: 7
+  out_channels: 7
+  num_res_layers: 4
+  res_channels: 32
+  skip_channels: 32
+  diffusion_step_embed_dim_in: 16
+  diffusion_step_embed_dim_mid: 64
+  diffusion_step_embed_dim_out: 64
+  s4_lmax: 24
+  s4_d_state: 16
+  s4_dropout: 0.0
+  s4_bidirectional: 1
+  s4_layernorm: 1
+
+solver:
+  results_folder: ./Checkpoints_etth
+  n_iters: 30000
+  learning_rate: 2.0e-4
+  only_generate_missing: 1
+
+dataloader:
+  target: Utils.Data_utils.real_datasets.CustomDataset
+  params:
+    name: etth
+    train_size: 0.8
+    data_root: ./Data/datasets/labeled_ETTh.npy
+    window: 24  # seq_length
+    save2npy: True
+    neg_one_to_one: True
+    seed: 123
+    style: separate
+    distribution: geometric
+
+  batch_size: 128
+  shuffle: True

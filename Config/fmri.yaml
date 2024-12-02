@@ -1,0 +1,41 @@
+diffusion_config:
+  T: 200
+  beta_0: 0.0001
+  beta_T: 0.02
+
+model:
+  in_channels: 50
+  out_channels: 50
+  num_res_layers: 4
+  res_channels: 64
+  skip_channels: 64
+  diffusion_step_embed_dim_in: 32
+  diffusion_step_embed_dim_mid: 128
+  diffusion_step_embed_dim_out: 128
+  s4_lmax: 24
+  s4_d_state: 32
+  s4_dropout: 0.0
+  s4_bidirectional: 1
+  s4_layernorm: 1
+
+solver:
+  results_folder: ./Checkpoints_fmri
+  n_iters: 40000
+  learning_rate: 2.0e-4
+  only_generate_missing: 1
+
+dataloader:
+  target: Utils.Data_utils.real_datasets.CustomDataset
+  params:
+    name: fMRI
+    train_size: 0.8
+    data_root: ./Data/datasets/fMRI/labeled_sim4.npy
+    window: 24  # seq_length
+    save2npy: True
+    neg_one_to_one: True
+    seed: 123
+    style: separate
+    distribution: geometric
+
+  batch_size: 64
+  shuffle: True
